@@ -1,0 +1,6 @@
+set(LLVM_TARGET_DEFINITIONS BF3DRMTOps.td)
+mlir_tablegen(BF3DRMTOps.h.inc -gen-op-decls)
+mlir_tablegen(BF3DRMTOps.cpp.inc -gen-op-defs)
+mlir_tablegen(BF3DRMTOpsDialect.h.inc -gen-dialect-decls)
+mlir_tablegen(BF3DRMTOpsDialect.cpp.inc -gen-dialect-defs)
+add_public_tablegen_target(MLIRBf3DrmtOpsIncGen)

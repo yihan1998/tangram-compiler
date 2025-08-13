@@ -1,0 +1,8 @@
+#ifndef TANGRAM_DIALECT_BF3DRMT_BF3DRMTDIALECT_H
+#define TANGRAM_DIALECT_BF3DRMT_BF3DRMTDIALECT_H
+
+#include "mlir/IR/Dialect.h"
+
+#include "tangram/Dialect/BF3DRMT/BF3DRMTOpsDialect.h.inc"
+
+#endif // TANGRAM_DIALECT_BF3DRMT_BF3DRMTDIALECT_H

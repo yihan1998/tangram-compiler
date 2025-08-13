@@ -1,0 +1,15 @@
+--- !FileInfo:
+  filepath: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/Dialect/BF3DRMT/BF3DRMTOps.td"
+  includes: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/Dialect/BF3DRMT;/usr/lib/llvm-18/include;/usr/lib/llvm-18/include;/home/runner/work/tangram-compiler/tangram-compiler/include;/home/runner/work/tangram-compiler/tangram-compiler/build/include"
+--- !FileInfo:
+  filepath: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/Dialect/BF3DRMT/BF3DRMTOps.td"
+  includes: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/Dialect/BF3DRMT;/usr/lib/llvm-18/include;/usr/lib/llvm-18/include;/home/runner/work/tangram-compiler/tangram-compiler/include;/home/runner/work/tangram-compiler/tangram-compiler/build/include"
+--- !FileInfo:
+  filepath: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/Dialect/BF3DRMT/BF3DRMTOps.td"
+  includes: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/Dialect/BF3DRMT;/usr/lib/llvm-18/include;/usr/lib/llvm-18/include;/home/runner/work/tangram-compiler/tangram-compiler/include;/home/runner/work/tangram-compiler/tangram-compiler/build/include"
+--- !FileInfo:
+  filepath: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/Dialect/BF3DRMT/BF3DRMTOps.td"
+  includes: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/Dialect/BF3DRMT;/usr/lib/llvm-18/include;/usr/lib/llvm-18/include;/home/runner/work/tangram-compiler/tangram-compiler/include;/home/runner/work/tangram-compiler/tangram-compiler/build/include"
+--- !FileInfo:
+  filepath: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/CodeGen/Passes.td"
+  includes: "/home/runner/work/tangram-compiler/tangram-compiler/include/tangram/CodeGen;/usr/lib/llvm-18/include;/usr/lib/llvm-18/include;/home/runner/work/tangram-compiler/tangram-compiler/include;/home/runner/work/tangram-compiler/tangram-compiler/build/include"
