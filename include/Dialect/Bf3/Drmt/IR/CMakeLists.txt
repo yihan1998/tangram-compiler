@@ -1,0 +1,26 @@
+set(LLVM_TARGET_DEFINITIONS Bf3Drmt.td)
+mlir_tablegen(Bf3DrmtDialect.h.inc -gen-dialect-decls -dialect=bf3drmt)
+mlir_tablegen(Bf3DrmtDialect.cpp.inc -gen-dialect-defs -dialect=bf3drmt)
+mlir_tablegen(Bf3DrmtOps.h.inc -gen-op-decls)
+mlir_tablegen(Bf3DrmtOps.cpp.inc -gen-op-defs)
+mlir_tablegen(Bf3DrmtTypes.h.inc -gen-typedef-decls -typedefs-dialect=bf3drmt)
+mlir_tablegen(Bf3DrmtTypes.cpp.inc -gen-typedef-defs -typedefs-dialect=bf3drmt)
+add_public_tablegen_target(EDAMLIR_BF3DRMT_IncGen)
+add_dependencies(mlir-headers EDAMLIR_BF3DRMT_IncGen)
+
+mlir_tablegen(Bf3DrmtOpsEnums.h.inc -gen-enum-decls)
+mlir_tablegen(Bf3DrmtOpsEnums.cpp.inc -gen-enum-defs)
+add_public_tablegen_target(EDAMLIR_BF3DRMT_EnumIncGen)
+add_dependencies(mlir-headers EDAMLIR_BF3DRMT_EnumIncGen)
+
+# Generate extra headers for custom enum and attrs.
+mlir_tablegen(Bf3DrmtAttrs.h.inc -gen-attrdef-decls -attrdefs-dialect=bf3drmt)
+mlir_tablegen(Bf3DrmtAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=bf3drmt)
+add_public_tablegen_target(EDAMLIR_BF3DRMT_AttrIncGen)
+add_dependencies(mlir-headers EDAMLIR_BF3DRMT_AttrIncGen)
+
+set(LLVM_TARGET_DEFINITIONS Bf3DrmtTypeInterfaces.td)
+mlir_tablegen(Bf3DrmtTypeInterfaces.h.inc -gen-type-interface-decls)
+mlir_tablegen(Bf3DrmtTypeInterfaces.cpp.inc -gen-type-interface-defs)
+add_public_tablegen_target(EDAMLIR_BF3DRMT_TypeInterfacesIncGen)
+add_dependencies(mlir-headers EDAMLIR_BF3DRMT_TypeInterfacesIncGen)

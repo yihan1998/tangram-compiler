@@ -1,0 +1,143 @@
+(include "base.egg")
+
+;;;; p4hir dialect ;;;;
+(function p4hir_bits (i64) Type :cost 100)
+(function p4hir_int (i64 Type) Attr :cost 100)
+(function p4hir_const (AttrPair Type) Op :cost 100)
+(function p4hir_binop (Op Op AttrPair Type) Op :cost 1000)
+(function p4hir_shr (Op Op Type) Op :cost 100)
+(function p4hir_variable (AttrPair AttrPair Type) Op :cost 100)
+(function p4hir_assign (Op Op) Op :cost 100)
+(function p4hir_ref (Type) Type :cost 100)
+(function p4hir_read (Op Type) Op :cost 100)
+
+;;;; drmt dialect ;;;;
+(function drmt_bits (i64) Type :cost 90)
+(function drmt_int (i64 Type) Attr :cost 90)
+(function drmt_constant (AttrPair Type) Op :cost 90)
+(function drmt_addi (Op Op Type) Op :cost 90)
+(function drmt_subi (Op Op Type) Op :cost 90)
+(function drmt_shli (Op Op Type) Op :cost 90)
+(function drmt_shrui (Op Op Type) Op :cost 90)
+(function drmt_variable (AttrPair AttrPair Type) Op :cost 90)
+(function drmt_assign (Op Op) Op :cost 90)
+(function drmt_ref (Type) Type :cost 100)
+(function drmt_read (Op Type) Op :cost 90)
+
+;;;; bf3drmt dialect ;;;;
+(function bf3drmt_bits (i64) Type :cost 1)
+(function bf3drmt_int (i64 Type) Attr :cost 1)
+(function bf3drmt_constant (AttrPair Type) Op :cost 1)
+(function bf3drmt_addi (Op Op Type) Op :cost 1)
+(function bf3drmt_subi (Op Op Type) Op :cost 1)
+(function bf3drmt_shli (Op Op Type) Op :cost 1)
+(function bf3drmt_shrui (Op Op Type) Op :cost 1)
+(function bf3drmt_assign (Op Op) Op :cost 1)
+
+;; OPS HERE ;;
+
+;; RULES HERE ;;
+(ruleset rules)
+
+;; P4 to dRMT ;;
+(rewrite
+    (p4hir_const ?attrs ?t)
+    (drmt_constant ?attrs ?t)
+    :ruleset rules
+)
+
+(rewrite
+    (p4hir_assign ?x ?y)
+    (drmt_assign ?x ?y)
+    :ruleset rules
+)
+
+(rewrite 
+    (p4hir_binop ?x (p4hir_const ?attrs ?t) (NamedAttr "kind" (IntegerAttr 5 (I32))) ?t)
+    (drmt_subi ?x (drmt_constant ?attrs ?t) ?t)
+    :ruleset rules
+)
+
+(rule
+    ((= ?lhs (p4hir_binop ?x (p4hir_const (NamedAttr "value" (p4hir_int ?n ?t)) ?t) (NamedAttr "kind" (IntegerAttr 1 (I32))) ?t)) ; x * n
+     (= ?lgn (log2 ?n)) ; if n = 2^k, then k = log2(n)
+     (= ?n (<< 1 ?lgn))) ; check if n is a power of 2
+    ((union ?lhs (drmt_shli ?x (drmt_constant (NamedAttr "value" (p4hir_int ?lgn ?t)) ?t) ?t))) ; x * n = x << lgn
+    :ruleset rules
+)
+
+(rule
+    ((= ?lhs (p4hir_binop ?x (p4hir_const (NamedAttr "value" (p4hir_int ?n ?t)) ?t) (NamedAttr "kind" (IntegerAttr 1 (I32))) ?t))
+     (= ?pow2 (<< 1 (log2 ?n)))
+     (!= ?n ?pow2)
+     (> ?n 1))
+    ((union ?lhs (drmt_addi 
+                   (drmt_shli ?x (drmt_constant (NamedAttr "value" (p4hir_int (log2 ?n) ?t)) ?t) ?t)
+                   (p4hir_binop ?x (p4hir_const (NamedAttr "value" (p4hir_int (- ?n ?pow2) ?t)) ?t) (NamedAttr "kind" (IntegerAttr 1 (I32))) ?t)
+                   ?t)))
+    :ruleset rules
+)
+
+(rule
+    ((= ?read (p4hir_read ?var ?t))
+     (= ?var (p4hir_variable ?init_attr ?name_attr ?vtype))
+     (= ?assign (drmt_assign ?const ?var))
+     (= ?const (drmt_constant ?const_attrs ?t)))
+    ((union ?read ?const))
+    :ruleset rules
+)
+
+(rule
+    ((= ?shr (p4hir_shr ?x ?const ?t))
+     (= ?const (drmt_constant ?const_attrs ?t)))
+    ((union ?shr (drmt_shrui ?x ?const ?t)))
+    :ruleset rules
+)
+
+(rewrite
+    (p4hir_variable ?init_attr ?name_attr ?t)
+    (drmt_variable ?init_attr ?name_attr ?t)
+    :ruleset rules
+)
+
+(rewrite
+    (p4hir_read ?var ?t)
+    (drmt_read ?var ?t)
+    :ruleset rules
+)
+
+;; dRMT to BF3 dRMT ;;
+
+(rewrite
+    (drmt_constant ?attrs ?t)
+    (bf3drmt_constant ?attrs ?t)
+    :ruleset rules
+)
+
+(rewrite 
+    (drmt_subi ?x (drmt_constant ?attrs ?t) ?t)
+    (bf3drmt_subi ?x (bf3drmt_constant ?attrs ?t) ?t)
+    :ruleset rules
+)
+
+(rewrite
+    (drmt_shli ?x ?y ?t)
+    (bf3drmt_shli ?x ?y ?t)
+    :ruleset rules
+)
+
+(rewrite
+    (drmt_shrui ?x ?y ?t)
+    (bf3drmt_shrui ?x ?y ?t)
+    :ruleset rules
+)
+
+(rewrite
+    (drmt_assign ?x ?y)
+    (bf3drmt_assign ?x ?y)
+    :ruleset rules
+)
+
+(run-schedule (saturate rules))
+
+;; EXTRACTS HERE ;;
