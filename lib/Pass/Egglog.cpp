@@ -1,6 +1,9 @@
 #include <regex>
 #include <chrono>
 
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/Signals.h"
+
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/MLIRContext.h"
@@ -92,6 +95,7 @@ std::vector<std::string> Egglog::splitExpression(std::string opStr) { // linear
     // The expression must be surrounded by parentheses
     if (opStr.front() != '(' || opStr.back() != ')') {
         llvm::outs() << "Invalid expression: " << opStr << "\n";
+        llvm::sys::PrintStackTrace(llvm::errs());
         exit(1);
     }
 
@@ -264,7 +268,6 @@ mlir::Type Egglog::parseType(std::string typeStr) {
 
         return mlir::FunctionType::get(&context, inputTypes, resultTypes);
     } else if (egglogCustom.typeParsers.find(type) != egglogCustom.typeParsers.end()) {
-        llvm::outs() << "Using custom type parser for type: " << type << "\n";
         TypeParseFunction parseFunc = egglogCustom.typeParsers.at(type);
         return parseFunc(split, *this);
     } else {
@@ -401,7 +404,6 @@ std::string Egglog::eggifyNamedAttribute(mlir::NamedAttribute namedAttr) {
 
 /** Parses the given attribute string into an MLIR attribute. Form (<type> <arg1> <arg2> ... <argN>) */
 mlir::Attribute Egglog::parseAttribute(const std::string& attrStr) {
-    llvm::outs() << "Parsing attribute: " << attrStr << "\n";
     std::vector<std::string> split = splitExpression(attrStr);
 
     std::string attrType = split[0];
@@ -473,7 +475,6 @@ mlir::Attribute Egglog::parseAttribute(const std::string& attrStr) {
 }
 
 std::string Egglog::eggifyAttribute(mlir::Attribute attr) {
-    llvm::outs() << "Eggifying attribute: " << attr << "\n";
     std::string egglogCode;
     llvm::raw_string_ostream ss(egglogCode);
 
@@ -568,7 +569,6 @@ std::string Egglog::eggifyAttribute(mlir::Attribute attr) {
         ss << "(SymbolRefAttr \"" << value << "\")";
 
     } else if (egglogCustom.attrStringifiers.find(typeName) != egglogCustom.attrStringifiers.end()) {  // custom attr by user
-        llvm::outs() << "Using custom attribute stringifier for type: " << typeName << "\n";
         AttrStringifyFunction stringifyFunc = egglogCustom.attrStringifiers.at(typeName);
         std::vector<std::string> split = stringifyFunc(attr, *this);
         assert(split.size() > 0);
@@ -616,9 +616,15 @@ mlir::Value Egglog::parseValue(const std::string& valueStr) {
         exit(1);
     }
 
+    // Parse the requested type from valueStr
+    mlir::Type requestedType = parseType(split[2]);
+    if (requestedType != eggifiedOp->mlirValues[0].getType()) {
+        eggifiedOp->mlirValues[0].setType(requestedType);
+    }
+
     return eggifiedOp->mlirValues[0];
 }
-
+#if 0
 mlir::Operation* Egglog::parseOperation(const std::string& newOpStr, mlir::OpBuilder& builder) {
     // llvm::outs() << "PARSING OPERATION: " << newOpStr << "\n";
     std::vector<std::string> split = splitExpression(newOpStr);
@@ -710,6 +716,157 @@ mlir::Operation* Egglog::parseOperation(const std::string& newOpStr, mlir::OpBui
     parsedOps[newOpStr] = newOp;  // cache the parsed operation
     return newOp;
 }
+#endif
+
+mlir::Operation* Egglog::parseOperation(const std::string& newOpStr, mlir::OpBuilder& builder) {
+    std::vector<std::string> split = splitExpression(newOpStr);
+    std::string opName = split[0];
+
+    llvm::outs() << "PARSING OPERATION: " << newOpStr << "\n";
+
+    if (opName == "Value") { // If it's an opaque op, no operation to parse
+        return nullptr;
+    }
+
+    bool cacheable = opName.find("func_call") == std::string::npos; // TODO: hacky way
+    if (parsedOps.find(newOpStr) != parsedOps.end() && cacheable) {
+        return parsedOps[newOpStr];
+    }
+
+    if (supportedEgglogOps.find(opName) == supportedEgglogOps.end()) {
+        llvm::outs() << "Unsupported operation '" << opName << "'.\n";
+        exit(1);
+    }
+
+    // ✅ Fix: convert "dialect_opname" into "dialect.opname"
+    std::string mlirOpName;
+    size_t pos = opName.find('_');
+    if (pos != std::string::npos) {
+        std::string dialect = opName.substr(0, pos);
+        std::string opname  = opName.substr(pos + 1);
+        mlirOpName = dialect + "." + opname;
+    } else {
+        mlirOpName = opName; // already MLIR style
+    }
+
+    EgglogOpDef egglogOpDef = supportedEgglogOps.at(opName);
+
+    size_t index = 0;
+
+    // Operands
+    std::vector<mlir::Value> operands;
+    for (size_t i = 0; i < egglogOpDef.nOperands; i++, index++) {
+        std::string operandStr = split[index + 1];
+
+        if (operandStr.find("(Value ") == 0) {
+            llvm::outs() << "Parsing operand: " << operandStr << "\n";
+            mlir::Value operand = parseValue(operandStr);
+            llvm::outs() << "Parsed operand: ";
+            operand.print(llvm::outs());
+            llvm::outs() << "\n";
+            operands.push_back(operand);
+        } else {
+            llvm::outs() << "Parsing nested operation: " << operandStr << "\n";
+            mlir::Operation* nestedOperand = parseOperation(operandStr, builder);
+            mlir::Value operand = nestedOperand->getResult(0); // TODO: multiple results?
+            operands.push_back(operand);
+        }
+    }
+
+    llvm::outs() << "Operands:\n";
+    for (size_t i = 0; i < operands.size(); ++i) {
+        llvm::outs() << "  [" << i << "]: ";
+        if (operands[i]) {
+            operands[i].print(llvm::outs());
+        } else {
+            llvm::outs() << "(null)";
+        }
+        llvm::outs() << "\n";
+    }
+
+    // Attributes
+    std::vector<mlir::NamedAttribute> attributes;
+    for (size_t i = 0; i < egglogOpDef.nAttributes; i++, index++) {
+        mlir::NamedAttribute attr = parseNamedAttribute(split[index + 1]);
+        attributes.push_back(attr);
+    }
+
+    llvm::outs() << "Attributes:\n";
+    for (size_t i = 0; i < attributes.size(); ++i) {
+        llvm::outs() << "  [" << i << "]: ";
+        attributes[i].getName().print(llvm::outs());
+        llvm::outs() << " = ";
+        attributes[i].getValue().print(llvm::outs());
+        llvm::outs() << "\n";
+    }
+
+    // Regions
+    std::vector<std::vector<mlir::Block*>> regions;
+    for (size_t i = 0; i < egglogOpDef.nRegions; i++, index++) {
+        std::vector<mlir::Block*> blocks = parseBlocksFromRegion(split[index + 1], builder);
+        regions.push_back(blocks);
+    }
+
+    llvm::outs() << "Regions:\n";
+    for (size_t i = 0; i < regions.size(); ++i) {
+        llvm::outs() << "  [" << i << "]: ";
+        llvm::outs() << regions[i].size() << " blocks\n";
+        for (size_t j = 0; j < regions[i].size(); ++j) {
+            llvm::outs() << "    Block " << j << " at " << regions[i][j] << "\n";
+        }
+    }
+
+    // Return types
+    std::vector<mlir::Type> types;
+    for (size_t i = 0; i < egglogOpDef.nResults; i++, index++) {
+        mlir::Type type = parseType(split[index + 1]);
+        types.push_back(type);
+    }
+
+    llvm::outs() << "Return types:\n";
+    for (size_t i = 0; i < types.size(); ++i) {
+        llvm::outs() << "  [" << i << "]: ";
+        types[i].print(llvm::outs());
+        llvm::outs() << "\n";
+    }
+
+    // Create the operation
+    mlir::Operation* newOp = nullptr;
+
+    if (mlirOpName.find("linalg.") == 0) {
+        std::string op = mlirOpName.substr(7);
+        if (op == "transpose") {
+            mlir::Attribute attr = attributes[0].getValue();
+            newOp = builder.create<mlir::linalg::TransposeOp>(
+                mlir::UnknownLoc::get(&context),
+                operands[0], operands[1],
+                attr.cast<mlir::DenseI64ArrayAttr>());
+        } else if (op == "matmul") {
+            newOp = builder.create<mlir::linalg::MatmulOp>(
+                mlir::UnknownLoc::get(&context),
+                operands[2].getType(),
+                llvm::ArrayRef<mlir::Value>{operands[0], operands[1]},
+                operands[2]);
+        }
+    } else {
+        mlir::OperationState state(mlir::UnknownLoc::get(&context), mlirOpName);
+        state.addOperands(operands);
+        state.addAttributes(attributes);
+        state.addTypes(types);
+
+        for (size_t i = 0; i < regions.size(); i++) {
+            mlir::Region* region = state.addRegion();
+            for (mlir::Block* block : regions[i]) {
+                region->push_back(block);
+            }
+        }
+
+        newOp = builder.create(state);
+    }
+
+    parsedOps[newOpStr] = newOp;  // cache
+    return newOp;
+}
 
 std::vector<mlir::Block*> Egglog::parseBlocksFromRegion(const std::string& regionStr, mlir::OpBuilder& builder) {
     std::vector<std::string> split = splitExpression(regionStr);
@@ -783,7 +940,10 @@ EggifiedOp* Egglog::eggifyOperation(mlir::Operation* op) {
         return foundEggifiedOp;
     }
 
+    // std::string opName = op->getName().getStringRef().str();
     std::string opName = op->getName().getStringRef().str();
+    // Convert dots to underscores consistently from the start
+    std::replace(opName.begin(), opName.end(), '.', '_');
     bool isSupported = supportedEgglogOps.find(opName) != supportedEgglogOps.end();
 
     if (!isSupported) {

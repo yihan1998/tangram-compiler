@@ -29,6 +29,29 @@ class Bf3Drmt_TypeNoMnemonic<string name, string typeMnemonic, list<Trait> trait
 //===----------------------------------------------------------------------===//
 // IntegerType
 //===----------------------------------------------------------------------===//
+def Bf3Drmt_BitsType : Bf3Drmt_TypeNoMnemonic<"Bits", "bits"> {
+  let summary = "fixed width integer type";
+  let description = [{
+    The `bf3drmt.bit` / `bf3drmt.int` type represents a P4 `bit` or `int` type.
+
+    For example, `bf3drmt.bit<32>` represents `bit<32>` in P4 and
+    `bf3drmt.int<42>` is `int<42>` in P4.
+  }];
+  let parameters = (ins "unsigned":$width, "bool":$isSigned);
+  let extraClassDeclaration = [{
+    /// Return true if this is a signed integer type.
+    bool isSigned() const { return getIsSigned(); }
+    /// Return true if this is an unsigned integer type.
+    bool isUnsigned() const { return !getIsSigned(); }
+
+    static mlir::Type parse(mlir::AsmParser &parser, bool isSigned);
+    void print(mlir::AsmPrinter &printer) const;
+
+    std::string getAlias() const {
+      return (isSigned() ? 'i' : 'b') + std::to_string(getWidth()) + 'i';
+    };
+  }];
+}
 
 def Bf3Drmt_IntegerType : Bf3Drmt_Type<"Integer", "int"> {
     let summary = "BF3 dRMT Integer type";
@@ -85,7 +108,7 @@ def Bf3Drmt_ValidBitType : Bf3Drmt_Type<"ValidBit", "validity.bit"> {
 def Bf3Drmt_PipeType : Bf3Drmt_Type<"Pipe", "pipe"> {
     let summary = "Pipe-like type (actions, methods, functions)";
     let description = [{
-        The `!bf3drmt.pipe` is a function type.
+        The `bf3drmt.pipe` is a function type.
     }];
 
     let parameters = (ins ArrayRefParameter<"mlir::Type">:$inputs,
@@ -345,7 +368,7 @@ def Bf3Drmt_HeaderType : Bf3Drmt_StructLikeType<"Header", "header"> {
     }];
 }
 
-def Bf3Drmt_StructLikeType : AnyTypeOf<[Bf3Drmt_StructType]>;
+def Bf3Drmt_StructLikeType : AnyTypeOf<[Bf3Drmt_StructType, Bf3Drmt_HeaderType]>;
 
 /// A ref type with the specified constraints on the nested type.
 class Bf3Drmt_SpecificRefType<Type type> : ConfinedType<Bf3Drmt_ReferenceType,

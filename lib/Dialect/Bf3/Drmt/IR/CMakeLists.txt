@@ -15,6 +15,5 @@ add_mlir_dialect_library(MLIRBF3DRMT
     MLIRIR
     MLIRInferTypeOpInterface
     MLIRFuncDialect
-    MLIREqSatPass
     P4MLIR_P4HIR
 )

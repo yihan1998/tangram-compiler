@@ -1027,6 +1027,33 @@ void P4HIR::StructOp::print(OpAsmPrinter &printer) {
 LogicalResult P4HIR::StructOp::verify() {
     auto elements = mlir::cast<StructLikeTypeInterface>(getType()).getFields();
 
+    auto inputs = getInput();
+
+    if (elements.size() != inputs.size()) {
+        llvm::errs() << "[StructOp::verify] field count mismatch:\n";
+        llvm::errs() << "  #type fields: " << elements.size() << "\n";
+        llvm::errs() << "  #operands   : " << inputs.size() << "\n";
+
+        llvm::errs() << "  Declared type fields:\n";
+        for (auto &f : elements)
+            llvm::errs() << "    - " << f.name << " : " << f.type << "\n";
+
+        llvm::errs() << "  Operand types:\n";
+        for (auto v : inputs)
+            llvm::errs() << "    - " << v.getType() << "\n";
+
+        return emitOpError("struct field count mismatch");
+    }
+
+    for (const auto &[field, value] : llvm::zip(elements, inputs)) {
+        if (field.type != value.getType()) {
+            llvm::errs() << "[StructOp::verify] type mismatch at field " << field.name << "\n";
+            llvm::errs() << "  expected: " << field.type << "\n";
+            llvm::errs() << "  got     : " << value.getType() << "\n";
+            return emitOpError("struct field `") << field.name << "` type does not match";
+        }
+    }
+
     if (elements.size() != getInput().size()) return emitOpError("struct field count mismatch");
 
     for (const auto &[field, value] : llvm::zip(elements, getInput()))

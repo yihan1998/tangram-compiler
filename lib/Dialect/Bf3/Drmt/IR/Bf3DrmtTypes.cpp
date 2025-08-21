@@ -24,6 +24,24 @@ using namespace edamlir::bf3drmt;
 #define GET_TYPEDEF_CLASSES
 #include "Dialect/Bf3/Drmt/IR/Bf3DrmtTypes.cpp.inc"
 
+void BitsType::print(mlir::AsmPrinter &printer) const {
+    printer << (isSigned() ? "int" : "bit") << '<' << getWidth() << '>';
+}
+
+Type BitsType::parse(mlir::AsmParser &parser, bool isSigned) {
+    auto *context = parser.getBuilder().getContext();
+
+    if (parser.parseLess()) return {};
+
+    // Fetch integer size.
+    unsigned width;
+    if (parser.parseInteger(width)) return {};
+
+    if (parser.parseGreater()) return {};
+
+    return BitsType::get(context, width, isSigned);
+}
+
 static mlir::ParseResult parseFuncType(mlir::AsmParser &p, llvm::SmallVector<mlir::Type> &params,
                                        mlir::Type &optionalResultType);
 static mlir::ParseResult parseFuncType(mlir::AsmParser &p, llvm::SmallVector<mlir::Type> &params);
@@ -89,6 +107,13 @@ void ValidBitType::print(mlir::AsmPrinter &printer) const {}
 //===----------------------------------------------------------------------===//
 // StructLikeType
 //===----------------------------------------------------------------------===//
+
+namespace mlir::edamlir::bf3drmt {
+bool operator==(const FieldInfo &a, const FieldInfo &b) {
+    return a.name == b.name && a.type == b.type;
+}
+llvm::hash_code hash_value(const FieldInfo &fi) { return llvm::hash_combine(fi.name, fi.type); }
+}
 
 static ParseResult parseFields(AsmParser &p, std::string &name,
                                SmallVectorImpl<FieldInfo> &parameters,
@@ -158,6 +183,13 @@ static void printFields(AsmPrinter &p, StringRef name, ArrayRef<FieldInfo> field
 //===----------------------------------------------------------------------===//
 // Parse
 //===----------------------------------------------------------------------===//
+Type StructType::parse(AsmParser &p) {
+    llvm::SmallVector<FieldInfo, 4> parameters;
+    std::string name;
+    mlir::DictionaryAttr annotations;
+    if (parseFields(p, name, parameters, annotations)) return {};
+    return get(p.getContext(), name, parameters, annotations);
+}
 
 Type HeaderType::parse(AsmParser &p) {
     llvm::SmallVector<FieldInfo, 4> parameters;
@@ -167,6 +199,38 @@ Type HeaderType::parse(AsmParser &p) {
     // Do not use our own get() here as it adds __validity bit. And we do have it already.
     return Base::get(p.getContext(), name, parameters,
                      annotations && !annotations.empty() ? annotations : mlir::DictionaryAttr());
+}
+
+Type Bf3DrmtDialect::parseType(mlir::DialectAsmParser &parser) const {
+    SMLoc typeLoc = parser.getCurrentLocation();
+    StringRef mnemonic;
+    Type genType;
+
+    // Try to parse as a tablegen'd type.
+    OptionalParseResult parseResult = generatedTypeParser(parser, &mnemonic, genType);
+    if (parseResult.has_value()) return genType;
+
+    // Type is not tablegen'd: try to parse as a raw C++ type.
+    return StringSwitch<function_ref<Type()>>(mnemonic)
+        .Case("int", [&] { return BitsType::parse(parser, /* isSigned */ true); })
+        .Case("bit", [&] { return BitsType::parse(parser, /* isSigned */ false); })
+        .Default([&] {
+            parser.emitError(typeLoc) << "unknown P4HIR type: " << mnemonic;
+            return Type();
+        })();
+}
+
+void Bf3DrmtDialect::printType(mlir::Type type, mlir::DialectAsmPrinter &os) const {
+    // Try to print as a tablegen'd type.
+    if (generatedTypePrinter(type, os).succeeded()) return;
+
+    // Add some special handling for certain types
+    TypeSwitch<Type>(type)
+        .Case<IntegerType>([&](IntegerType type) { type.print(os); })
+        .Case<BitsType>([&](BitsType type) { type.print(os); })
+        .Default([](Type) {
+            llvm::report_fatal_error("printer is missing a handler for this type");
+        });
 }
 
 //===----------------------------------------------------------------------===//
@@ -320,25 +384,7 @@ std::optional<DenseMap<Attribute, Type>> ArrayType::getSubelementIndexMap() cons
 
 Type ArrayType::getTypeAtIndex(Attribute) const { return getElementType(); }
 
-namespace mlir::edamlir::bf3drmt {
-bool operator==(const FieldInfo &a, const FieldInfo &b) {
-    return a.name == b.name && a.type == b.type;
-}
-llvm::hash_code hash_value(const FieldInfo &fi) { return llvm::hash_combine(fi.name, fi.type); }
-}
-
-void Bf3DrmtDialect::printType(mlir::Type type, mlir::DialectAsmPrinter &os) const {
-    // Try to print as a tablegen'd type.
-    if (generatedTypePrinter(type, os).succeeded()) return;
-
-    // Add some special handling for certain types
-    TypeSwitch<Type>(type).Case<IntegerType>([&](IntegerType type) { type.print(os); }).Default([](Type) {
-        llvm::report_fatal_error("printer is missing a handler for this type");
-    });
-}
-
 void Bf3DrmtDialect::registerTypes() {
-    std::cout << "Register types..." << std::endl;
     addTypes<
 #define GET_TYPEDEF_LIST
 #include "Dialect/Bf3/Drmt/IR/Bf3DrmtTypes.cpp.inc"

@@ -216,6 +216,7 @@ public:
 
     // caches
     std::vector<EggifiedOp*> eggifiedBlock;
+    std::vector<EggifiedOp*> rootEggifiedBlock;
     std::map<std::string, mlir::Operation*> parsedOps;
 };
 

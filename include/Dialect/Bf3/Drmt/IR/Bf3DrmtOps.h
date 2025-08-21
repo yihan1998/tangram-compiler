@@ -16,6 +16,8 @@
 #include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+#include "Dialect/Bf3/Drmt/IR/Bf3DrmtTypeInterfaces.h"
+#include "Dialect/Bf3/Drmt/IR/Bf3DrmtAttrs.h"
 #include "Dialect/Bf3/Drmt/IR/Bf3DrmtOpsEnums.h"
 #include "Dialect/Bf3/Drmt/IR/Bf3DrmtTypes.h"
 

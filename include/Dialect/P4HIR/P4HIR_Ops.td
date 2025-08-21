@@ -779,7 +779,7 @@ def ReturnOp : P4HIR_Op<"return", [ParentOneOf<["ScopeOp", "IfOp",
 
 def FuncOp : P4HIR_Op<"func", [
   AutomaticAllocationScope, CallableOpInterface, FunctionOpInterface,
-  IsolatedFromAbove
+  // IsolatedFromAbove
 ]> {
   let summary = "Define a function-like object (action, function)";
   let description = [{

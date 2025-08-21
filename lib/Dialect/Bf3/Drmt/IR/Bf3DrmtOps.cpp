@@ -52,38 +52,36 @@ static void printExtractOp(OpAsmPrinter &printer, AggType op) {
     else
         printer << type;
 }
-#if 0
-//===----------------------------------------------------------------------===//
-// ConstOp
-//===----------------------------------------------------------------------===//
 
-void bf3drmt::ConstOp::getAsmResultNames(OpAsmSetValueNameFn setNameFn) {
-    if (getName() && !getName()->empty()) {
-        setNameFn(getResult(), *getName());
-        return;
+static ParseResult parseExtractRefOp(OpAsmParser &parser, OperationState &result) {
+    OpAsmParser::UnresolvedOperand operand;
+    StringAttr fieldName;
+    bf3drmt::ReferenceType declType;
+
+    if (parser.parseOperand(operand) || parser.parseLSquare() || parser.parseAttribute(fieldName) ||
+        parser.parseRSquare() || parser.parseOptionalAttrDict(result.attributes) ||
+        parser.parseColon() || parser.parseCustomTypeWithFallback<bf3drmt::ReferenceType>(declType))
+        return failure();
+
+    auto aggType = mlir::dyn_cast<bf3drmt::Bf3Drmt_StructLikeTypeInterface>(declType.getObjectType());
+    if (!aggType) {
+        parser.emitError(parser.getNameLoc(), "expected reference to aggregate type");
+        return failure();
+    }
+    auto fieldIndex = aggType.getFieldIndex(fieldName);
+    if (!fieldIndex) {
+        parser.emitError(parser.getNameLoc(),
+                         "field name '" + fieldName.getValue() + "' not found in aggregate type");
+        return failure();
     }
 
-    setNameFn(getResult(), "cst");
-}
+    auto indexAttr = IntegerAttr::get(bf3drmt::IntegerType::get(parser.getContext(), 32, false), *fieldIndex);
+    result.addAttribute("fieldIndex", indexAttr);
+    Type resultType = bf3drmt::ReferenceType::get(aggType.getFields()[*fieldIndex].type);
+    result.addTypes(resultType);
 
-LogicalResult bf3drmt::ConstOp::verify() {
+    if (parser.resolveOperand(operand, declType, result.operands)) return failure();
     return success();
-}
-
-OpFoldResult bf3drmt::ConstOp::fold(FoldAdaptor adaptor) { return getValue(); }
-
-//===----------------------------------------------------------------------===//
-// BinaryOp
-//===----------------------------------------------------------------------===//
-
-void bf3drmt::BinOp::getAsmResultNames(OpAsmSetValueNameFn setNameFn) {
-    setNameFn(getResult(), stringifyEnum(getKind()));
-}
-
-Operation *bf3drmt::Bf3DrmtDialect::materializeConstant(OpBuilder &builder, Attribute value, Type type, Location loc) {
-    auto typedAttr = mlir::cast<mlir::TypedAttr>(value);
-    assert(typedAttr.getType() == type && "type mismatch");
-    return builder.create<bf3drmt::ConstOp>(loc, typedAttr);
 }
 
 static ParseResult parseExtractOp(OpAsmParser &parser, OperationState &result) {
@@ -157,112 +155,6 @@ static ParseResult parseExtractOp(OpAsmParser &parser, OperationState &result) {
 
     return success();
 }
-#if 0
-static ParseResult parseExtractRefOp(OpAsmParser &parser, OperationState &result) {
-    OpAsmParser::UnresolvedOperand operand;
-    StringAttr fieldName;
-    bf3drmt::ReferenceType declType;
-
-    if (parser.parseOperand(operand) || parser.parseLSquare() || parser.parseAttribute(fieldName) ||
-        parser.parseRSquare() || parser.parseOptionalAttrDict(result.attributes) ||
-        parser.parseColon() || parser.parseCustomTypeWithFallback<bf3drmt::ReferenceType>(declType))
-        return failure();
-
-    auto aggType = mlir::dyn_cast<bf3drmt::Bf3Drmt_StructLikeTypeInterface>(declType.getObjectType());
-    if (!aggType) {
-        parser.emitError(parser.getNameLoc(), "expected reference to aggregate type");
-        return failure();
-    }
-    auto fieldIndex = aggType.getFieldIndex(fieldName);
-    if (!fieldIndex) {
-        parser.emitError(parser.getNameLoc(),
-                         "field name '" + fieldName.getValue() + "' not found in aggregate type");
-        return failure();
-    }
-
-    auto indexAttr = IntegerAttr::get(bf3drmt::IntegerType::get(parser.getContext(), 32, false), *fieldIndex);
-    result.addAttribute("fieldIndex", indexAttr);
-    Type resultType = bf3drmt::ReferenceType::get(aggType.getFields()[*fieldIndex].type);
-    result.addTypes(resultType);
-
-    if (parser.resolveOperand(operand, declType, result.operands)) return failure();
-    return success();
-}
-#endif
-
-static ParseResult parseExtractRefOp(OpAsmParser &parser, OperationState &result) {
-    OpAsmParser::UnresolvedOperand operand;
-    SmallVector<Attribute> fieldAttrs;
-    bf3drmt::ReferenceType declType;
-
-    // Parse: operand [ "field1", "field2", ... ]
-    if (parser.parseOperand(operand) || parser.parseLSquare())
-        return failure();
-
-    // Parse the list of string field names
-    bool first = true;
-    while (true) {
-        if (!first && failed(parser.parseComma())) break;
-        StringAttr fieldName;
-        if (parser.parseAttribute(fieldName)) return failure();
-        fieldAttrs.push_back(fieldName);
-        first = false;
-    }
-
-    if (parser.parseRSquare() || 
-        parser.parseOptionalAttrDict(result.attributes) ||
-        parser.parseColon() ||
-        parser.parseCustomTypeWithFallback<bf3drmt::ReferenceType>(declType)) {
-        return failure();
-    }
-
-    // Ensure the input type is a reference to a struct-like type
-    auto objectType = declType.getObjectType();
-    auto structLike = llvm::dyn_cast<bf3drmt::Bf3Drmt_StructLikeTypeInterface>(objectType);
-    if (!structLike) {
-        return parser.emitError(parser.getNameLoc(), "expected reference to struct-like type");
-    }
-
-    // Traverse nested field path to resolve result type
-    Type current = objectType;
-    for (const auto &attr : fieldAttrs) {
-        auto fieldName = attr.cast<StringAttr>().getValue();
-        auto structType = llvm::dyn_cast<bf3drmt::Bf3Drmt_StructLikeTypeInterface>(current);
-        if (!structType) {
-            return parser.emitError(parser.getNameLoc())
-                   << "field '" << fieldName << "' is not in a struct-like type";
-        }
-        Type fieldType = structType.getFieldType(fieldName);
-        if (!fieldType) {
-            return parser.emitError(parser.getNameLoc())
-                   << "field '" << fieldName << "' not found in struct";
-        }
-        current = fieldType;
-    }
-
-    // Add operands and attributes
-    result.addAttribute("fields", parser.getBuilder().getArrayAttr(fieldAttrs));
-    result.addTypes(bf3drmt::ReferenceType::get(current));
-
-    if (parser.resolveOperand(operand, declType, result.operands))
-        return failure();
-
-    return success();
-}
-
-static void printExtractOp(OpAsmPrinter &printer, bf3drmt::StructExtractRefOp op) {
-    printer << " ";
-    printer.printOperand(op.getInput());
-    printer << "[";
-
-    // // Print comma-separated field names
-    // llvm::interleaveComma(op.getFieldPath(), printer, 
-    //     [&](StringRef field) { printer << "\"" << field << "\""; });
-
-    // printer << "]";
-    // printer.printOptionalAttrDict(op->getAttrs(), {"fieldPath"});
-    // printer << " : " << op.getInput().getType();
-}
 
 template <typename AggregateOp>
 static LogicalResult verifyAggregateFieldIndexAndType(AggregateOp &op,
@@ -280,6 +172,161 @@ static LogicalResult verifyAggregateFieldIndexAndType(AggregateOp &op,
                                 << " does not match expected type " << elementType;
 
     return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ConstOp
+//===----------------------------------------------------------------------===//
+
+void bf3drmt::ConstOp::getAsmResultNames(OpAsmSetValueNameFn setNameFn) {
+    if (getName() && !getName()->empty()) {
+        setNameFn(getResult(), *getName());
+        return;
+    }
+
+    setNameFn(getResult(), "cst");
+}
+
+LogicalResult bf3drmt::ConstOp::verify() {
+    return success();
+}
+
+OpFoldResult bf3drmt::ConstOp::fold(FoldAdaptor adaptor) { return getValue(); }
+
+//===----------------------------------------------------------------------===//
+// VariableOp
+//===----------------------------------------------------------------------===//
+
+void bf3drmt::VariableOp::getAsmResultNames(OpAsmSetValueNameFn setNameFn) {
+    if (getName() && !getName()->empty()) setNameFn(getResult(), *getName());
+}
+
+LogicalResult bf3drmt::VariableOp::canonicalize(bf3drmt::VariableOp op, PatternRewriter &rewriter) {
+    // Check if the variable has one unique assignment to it, all other
+    // uses are reads, and that all uses are in the same block as the variable
+    // itself.
+    auto *block = op->getBlock();
+    bf3drmt::AssignOp uniqueAssignOp;
+    for (auto *user : op->getUsers()) {
+        // Ensure that all users of the variable are in the same block.
+        // TODO: Relax this condition, only require assignment to be in the same block
+        if (user->getBlock() != block) return failure();
+
+        // Ensure there is at most one unique assignment to the variable.
+        if (auto assignOp = mlir::dyn_cast<bf3drmt::AssignOp>(user)) {
+            if (uniqueAssignOp) return failure();
+            uniqueAssignOp = assignOp;
+            continue;
+        }
+
+        // Ensure all other users are reads.
+        if (!mlir::isa<ReadOp>(user)) return failure();
+    }
+    if (!uniqueAssignOp) return failure();
+
+    // Remove the assign op and replace all reads with the new assigned var op.
+    mlir::Value assignedValue = uniqueAssignOp.getValue();
+    rewriter.eraseOp(uniqueAssignOp);
+    for (auto *user : llvm::make_early_inc_range(op->getUsers())) {
+        auto readOp = mlir::cast<bf3drmt::ReadOp>(user);
+        rewriter.replaceOp(readOp, assignedValue);
+    }
+
+    // Remove the original variable.
+    rewriter.eraseOp(op);
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ControlOp
+//===----------------------------------------------------------------------===//
+
+void bf3drmt::ControlOp::build(mlir::OpBuilder &builder, mlir::OperationState &result,
+                               llvm::StringRef sym_name, ArrayRef<DictionaryAttr> argAttrs,
+                               mlir::DictionaryAttr annotations) {
+    result.addRegion();
+
+    result.addAttribute(::mlir::SymbolTable::getSymbolAttrName(), builder.getStringAttr(sym_name));
+
+    // Controls are top-level objects with public visibility
+    result.addAttribute(::mlir::SymbolTable::getVisibilityAttrName(), builder.getStringAttr("public"));
+
+    if (annotations && !annotations.empty())
+        result.addAttribute(getAnnotationsAttrName(result.name), annotations);
+    
+    // Add arg_attrs if provided
+    if (!argAttrs.empty()) {
+        SmallVector<mlir::Attribute> attrs(argAttrs.begin(), argAttrs.end());
+        result.addAttribute(getArgAttrsAttrName(result.name), builder.getArrayAttr(attrs));
+    }
+}
+
+void bf3drmt::ControlOp::createEntryBlock() {
+    assert(getBody().empty() && "can only create entry block for empty control");
+    Block &first = getBody().emplaceBlock();
+    auto loc = getBody().getLoc();
+    // Note: No arguments to add since bf3drmt ControlOp doesn't have function type
+}
+
+void bf3drmt::ControlOp::print(mlir::OpAsmPrinter &printer) {
+    auto funcName = getSymNameAttr().getValue();
+
+    printer << ' ';
+    printer.printSymbolName(funcName);
+
+    // Print attributes (excluding the ones we custom print)
+    printer.printOptionalAttrDictWithKeyword((*this)->getAttrs(),
+        {::mlir::SymbolTable::getSymbolAttrName(), ::mlir::SymbolTable::getVisibilityAttrName(),
+         getAnnotationsAttrName(), getArgAttrsAttrName()});
+
+    if (auto ann = getAnnotations(); ann && !ann->empty()) {
+        printer << " annotations ";
+        printer.printAttributeWithoutType(*ann);
+    }
+
+    printer << ' ';
+    printer.printRegion(getBody(), /*printEntryBlockArgs=*/false, /*printBlockTerminators=*/true);
+}
+
+mlir::ParseResult bf3drmt::ControlOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    llvm::SMLoc loc = parser.getCurrentLocation();
+    auto &builder = parser.getBuilder();
+
+    // Parse the name as a symbol.
+    StringAttr nameAttr;
+    if (parser.parseSymbolName(nameAttr, ::mlir::SymbolTable::getSymbolAttrName(), result.attributes))
+        return mlir::failure();
+
+    // Controls are visible from top-level
+    result.addAttribute(::mlir::SymbolTable::getVisibilityAttrName(), builder.getStringAttr("public"));
+
+    // If additional attributes are present, parse them.
+    if (parser.parseOptionalAttrDictWithKeyword(result.attributes)) return failure();
+
+    // Parse annotations
+    mlir::DictionaryAttr annotations;
+    if (::mlir::succeeded(parser.parseOptionalKeyword("annotations"))) {
+        if (parser.parseAttribute<mlir::DictionaryAttr>(annotations)) return failure();
+        result.addAttribute(getAnnotationsAttrName(result.name), annotations);
+    }
+
+    // Parse the control body.
+    auto *body = result.addRegion();
+    if (parser.parseRegion(*body, /*arguments=*/{}, /*enableNameShadowing=*/false)) return mlir::failure();
+
+    // Make sure its not empty.
+    if (body->empty()) return parser.emitError(loc, "expected non-empty control body");
+
+    return mlir::success();
+}
+
+#if 0
+//===----------------------------------------------------------------------===//
+// BinaryOp
+//===----------------------------------------------------------------------===//
+
+void bf3drmt::BinOp::getAsmResultNames(OpAsmSetValueNameFn setNameFn) {
+    setNameFn(getResult(), stringifyEnum(getKind()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -380,74 +427,49 @@ OpFoldResult bf3drmt::StructExtractOp::fold(FoldAdaptor adaptor) {
 
     return {};
 }
+#endif // 0
+
 
 //===----------------------------------------------------------------------===//
 // StructExtractRefOp
 //===----------------------------------------------------------------------===//
 
 void bf3drmt::StructExtractRefOp::getAsmResultNames(function_ref<void(Value, StringRef)> setNameFn) {
-    auto fields = getFields(); // ArrayAttr
-    if (!fields || fields.empty())
-        return;
-
-    auto lastAttr = fields.getValue().back().dyn_cast<StringAttr>();
-    if (!lastAttr)
-        return;
-
-    llvm::SmallString<32> name(lastAttr.getValue());
+    llvm::SmallString<16> name = getFieldName();
     name += "_field_ref";
     setNameFn(getResult(), name);
 }
 
 ParseResult bf3drmt::StructExtractRefOp::parse(OpAsmParser &parser, OperationState &result) {
+    llvm::outs() << "Parsing StructExtractRefOp\n";
     return parseExtractRefOp(parser, result);
 }
 
 void bf3drmt::StructExtractRefOp::print(OpAsmPrinter &printer) { printExtractOp(printer, *this); }
 
 LogicalResult bf3drmt::StructExtractRefOp::verify() {
-    auto inputRefType = getInput().getType().dyn_cast<ReferenceType>();
-    if (!inputRefType)
-        return emitOpError("input must be a reference type");
-
-    auto type = inputRefType.getObjectType();
-    auto structType = llvm::dyn_cast<Bf3Drmt_StructLikeTypeInterface>(type);
-    if (!structType)
-        return emitOpError("expected struct-like object type");
-
-    Type current = type;
-    for (auto attr : getFields()) {
-        auto fieldName = attr.cast<StringAttr>().getValue();
-        auto structLike = dyn_cast<Bf3Drmt_StructLikeTypeInterface>(current);
-        if (!structLike)
-            return emitOpError() << "field '" << fieldName << "' is not in a struct-like type";
-        auto fieldType = structLike.getFieldType(fieldName);
-        if (!fieldType)
-            return emitOpError() << "field '" << fieldName << "' not found in struct";
-        current = fieldType;
-    }
-
-    if (getResult().getType() != ReferenceType::get(current))
-        return emitOpError("result type must match the referenced final field");
-
-    return success();
+    auto type = mlir::cast<Bf3Drmt_StructLikeTypeInterface>(
+    mlir::cast<ReferenceType>(getInput().getType()).getObjectType());
+    return verifyAggregateFieldIndexAndType(*this, type, getType().getObjectType());
 }
 
-void bf3drmt::StructExtractRefOp::build(OpBuilder &builder, OperationState &state,
-                                        Value input, ArrayAttr fields) {
-    state.addOperands(input);
-    state.addAttribute("fields", fields);
+void bf3drmt::StructExtractRefOp::build(OpBuilder &builder, OperationState &odsState, Value input,
+                                      bf3drmt::FieldInfo field) {
+    auto structLikeType = mlir::cast<ReferenceType>(input.getType()).getObjectType();
+    auto structType = mlir::cast<Bf3Drmt_StructLikeTypeInterface>(structLikeType);
+    auto fieldIndex = structType.getFieldIndex(field.name);
+    assert(fieldIndex.has_value() && "field name not found in aggregate type");
+    build(builder, odsState, ReferenceType::get(field.type), input, *fieldIndex);
+}
 
-    Type current = mlir::cast<ReferenceType>(input.getType()).getObjectType();
-    for (auto attr : fields) {
-        auto fieldName = attr.cast<StringAttr>().getValue();
-        auto structLike = dyn_cast<bf3drmt::Bf3Drmt_StructLikeTypeInterface>(current);
-        assert(structLike && "non-struct-like type in field path");
-        current = structLike.getFieldType(fieldName);
-        assert(current && "field name not found in struct");
-    }
-
-    state.addTypes(ReferenceType::get(current));
+void bf3drmt::StructExtractRefOp::build(OpBuilder &builder, OperationState &odsState, Value input,
+                                      StringAttr fieldName) {
+    auto structLikeType = mlir::cast<ReferenceType>(input.getType()).getObjectType();
+    auto structType = mlir::cast<Bf3Drmt_StructLikeTypeInterface>(structLikeType);
+    auto fieldIndex = structType.getFieldIndex(fieldName);
+    auto fieldType = structType.getFieldType(fieldName);
+    assert(fieldIndex.has_value() && "field name not found in aggregate type");
+    build(builder, odsState, ReferenceType::get(fieldType), input, *fieldIndex);
 }
 
 //===----------------------------------------------------------------------===//
@@ -458,7 +480,28 @@ void bf3drmt::ReadOp::getAsmResultNames(OpAsmSetValueNameFn setNameFn) {
     setNameFn(getResult(), "val");
 }
 
-#endif // 0
+//===----------------------------------------------------------------------===//
+// PipeKeyOp
+//===----------------------------------------------------------------------===//
+
+void bf3drmt::PipeKeyOp::build(
+    mlir::OpBuilder &builder, mlir::OperationState &result, mlir::DictionaryAttr annotations,
+    llvm::function_ref<void(mlir::OpBuilder &, mlir::Location)> keyBuilder) {
+    if (annotations && !annotations.empty())
+        result.addAttribute(getAnnotationsAttrName(result.name), annotations);
+
+    OpBuilder::InsertionGuard guard(builder);
+
+    Region *entryRegion = result.addRegion();
+    builder.createBlock(entryRegion);
+    keyBuilder(builder, result.location);
+}
+
+Operation *bf3drmt::Bf3DrmtDialect::materializeConstant(OpBuilder &builder, Attribute value, Type type, Location loc) {
+    auto typedAttr = mlir::cast<mlir::TypedAttr>(value);
+    assert(typedAttr.getType() == type && "type mismatch");
+    return builder.create<bf3drmt::ConstOp>(loc, typedAttr);
+}
 
 #define GET_OP_CLASSES
 #include "Dialect/Bf3/Drmt/IR/Bf3DrmtDialect.cpp.inc"

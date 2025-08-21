@@ -5,6 +5,9 @@ set(LIBS
         ${conversion_libs}
         MLIRTransforms
         MLIROptLib
+        MLIRBF3DRMT
+        MLIREqSatPass
+        MLIRP4HIRAdaptivePartitioningPass
         )
 add_llvm_executable(tangram-opt tangram-opt.cpp)
 

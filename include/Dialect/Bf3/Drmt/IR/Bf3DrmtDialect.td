@@ -25,6 +25,7 @@ def Bf3Drmt_Dialect : Dialect {
     let extraClassDeclaration = [{
         void registerTypes();
         void registerAttributes();
+        mlir::Type parseType(mlir::DialectAsmParser &parser) const override;
         void printType(mlir::Type type, mlir::DialectAsmPrinter &printer) const override;
     }];
 }

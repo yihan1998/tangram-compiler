@@ -22,13 +22,15 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "Dialect/Bf3/Drmt/IR/Bf3DrmtOps.h"
+
 #include "Pass/EqualitySaturationPass.h"
 #include "Pass/Egglog.h"
-
+#if 1
 EqualitySaturationPass::EqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs)
     : mlirFilePath(mlirFile), eggFilePath(eggFile), customFunctions(funcs) {}
 
-void EqualitySaturationPass::runEgglog(const std::vector<EggifiedOp*>& block, const std::string& blockName) {
+void EqualitySaturationPass::runEgglog(const std::vector<EggifiedOp*>& block, const std::vector<EggifiedOp*>& rootBlock, const std::string& blockName) {
     std::ifstream eggFile(eggFilePath);
     std::vector<std::string> egglogLines;
 
@@ -53,6 +55,7 @@ void EqualitySaturationPass::runEgglog(const std::vector<EggifiedOp*>& block, co
 
             insertedOps = true;
         } else if (!insertedExtracts && line == extractsTarget) {
+            // for (const EggifiedOp* op: rootBlock) {  // Extract the results of the egglog run
             for (const EggifiedOp* op: block) {  // Extract the results of the egglog run
                 if (op->shouldBeExtracted()) {
                     egglogLines.push_back("(extract " + op->getPrintId() + ")");
@@ -112,6 +115,7 @@ void EqualitySaturationPass::runOnBlock(mlir::Block& block, const std::string& b
     for (mlir::Operation& op: block.getOperations()) {
         EggifiedOp* eggifiedOp = egglog.eggifyOperation(&op);
         eggifiedOp->print(llvm::outs());
+        egglog.rootEggifiedBlock.push_back(eggifiedOp); 
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -122,7 +126,8 @@ void EqualitySaturationPass::runOnBlock(mlir::Block& block, const std::string& b
         eggOp->print(llvm::outs());
     }
 
-    runEgglog(egglog.eggifiedBlock, blockName);
+    // runEgglog(egglog.eggifiedBlock, blockName);
+    runEgglog(egglog.eggifiedBlock, egglog.rootEggifiedBlock, blockName);
 
 #if 0
     // Read the extracted results
@@ -258,12 +263,8 @@ void EqualitySaturationPass::runOnBlock(mlir::Block& block, const std::string& b
             continue;
         }
 
-        // eggOp.print(llvm::outs());
-
         std::string line;
         std::getline(file, line);
-
-        // llvm::outs() << eggOp.getPrintId() << " = " << line << "\n";
 
         mlir::Operation* prevOp = eggOp->mlirOp;
         mlir::OpBuilder builder(prevOp);
@@ -286,6 +287,7 @@ void EqualitySaturationPass::runOnBlock(mlir::Block& block, const std::string& b
 
     egglogToMlirTime += std::chrono::duration<double>(end - start).count();
 
+    llvm::outs() << "\n\nDone, printing ops: \n";
     // dump parsed ops cache
     for (const auto& [opStr, op]: egglog.parsedOps) {
         llvm::outs() << opStr << " : " << *op << "\n";
@@ -296,6 +298,7 @@ void EqualitySaturationPass::runOnBlock(mlir::Block& block, const std::string& b
 }
 
 void EqualitySaturationPass::runOnFunction(mlir::LLVM::LLVMFuncOp& funcOp) {
+// void EqualitySaturationPass::runOnFunction(P4::P4MLIR::P4HIR::ControlOp& funcOp) {
     llvm::outs() << "Running on function: " << funcOp.getName() << "\n";
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -331,7 +334,8 @@ void EqualitySaturationPass::runOnFunction(mlir::LLVM::LLVMFuncOp& funcOp) {
         eggOp->print(llvm::outs());
     }
 
-    runEgglog(egglog.eggifiedBlock, funcOp.getName().str());
+    // DANGER: This is a temporary solution to run Egglog on the function.
+    runEgglog(egglog.eggifiedBlock, egglog.rootEggifiedBlock, funcOp.getName().str());
 
     // Read the extracted results
     std::vector<std::string> extractedOps;
@@ -439,7 +443,7 @@ void EqualitySaturationPass::init() {
     std::string line;
 
     while (std::getline(opFile, line)) {
-        llvm::outs() << "Parsing line: " << line << "\n";
+        // llvm::outs() << "Parsing line: " << line << "\n";
         if (EgglogOpDef::isOpFunction(line)) {
             EgglogOpDef parsedOp = EgglogOpDef::parseOpFunction(line);
 
@@ -465,25 +469,98 @@ void EqualitySaturationPass::init() {
     llvm::outs() << "\n\n";
 }
 
+// void EqualitySaturationPass::convertRootOpToBf3drmt(P4::P4MLIR::P4HIR::ControlOp oldControlOp) {
+//     auto parentOp = oldControlOp->getParentOp();
+//     if (!parentOp) {
+//         llvm::errs() << "Error: ControlOp has no parent operation\n";
+//         return;
+//     }
+    
+//     mlir::OpBuilder builder(parentOp);
+//     builder.setInsertionPoint(oldControlOp);
+//     mlir::Location loc = oldControlOp.getLoc();
+    
+//     // Get the attributes from the old control op
+//     llvm::StringRef symName = oldControlOp.getName();
+    
+//     // Get arg_attrs if it exists
+//     llvm::ArrayRef<mlir::DictionaryAttr> argAttrs;
+//     if (auto argAttrsAttr = oldControlOp->getAttrOfType<mlir::ArrayAttr>("arg_attrs")) {
+//         // Convert ArrayAttr to ArrayRef<DictionaryAttr>
+//         llvm::SmallVector<mlir::DictionaryAttr> attrs;
+//         for (auto attr : argAttrsAttr) {
+//             if (auto dictAttr = attr.dyn_cast<mlir::DictionaryAttr>()) {
+//                 attrs.push_back(dictAttr);
+//             }
+//         }
+//         argAttrs = attrs;
+//     }
+    
+//     // Get annotations if they exist
+//     mlir::DictionaryAttr annotations;
+//     if (auto annotationsAttr = oldControlOp->getAttrOfType<mlir::DictionaryAttr>("annotations")) {
+//         annotations = annotationsAttr;
+//     }
+    
+//     // Create the new bf3drmt.control operation
+//     auto newControlOp = builder.create<mlir::edamlir::bf3drmt::ControlOp>(
+//         loc,
+//         symName,
+//         argAttrs,
+//         annotations
+//     );
+
+//     // Move the region from old to new operation
+//     newControlOp.getBody().takeBody(oldControlOp.getRegion());
+
+//     // Copy any other attributes you need
+//     if (auto symVisibility = oldControlOp->getAttr("sym_visibility")) {
+//         newControlOp->setAttr("sym_visibility", symVisibility);
+//     }
+
+//     newControlOp->dump();
+
+//     // Replace and erase the old operation
+//     oldControlOp->replaceAllUsesWith(newControlOp);
+//     oldControlOp->erase();
+// }
+#if 0
 void EqualitySaturationPass::runOnOperation() {
     init();
 
-    // mlir::func::FuncOp rootOp = getOperation();
-    // mlir::LLVM::LLVMFuncOp rootOp = getOperation();
-    P4::P4MLIR::P4HIR::FuncOp rootOp = getOperation();
-    // P4::P4MLIR::P4HIR::ControlOp rootOp = getOperation();
+    P4::P4MLIR::P4HIR::ControlOp rootOp = getOperation();
+    auto parentOp = rootOp->getParentOp();
+    
+    // Check if we have a parent to work with
+    if (!parentOp) {
+        llvm::errs() << "Error: ControlOp has no parent operation, cannot rewrite root\n";
+        signalPassFailure();
+        return;
+    }
+    
     llvm::StringRef rootOpName = rootOp.getName();
 
+    llvm::outs() << "Parent operation: " << parentOp->getName().getStringRef() << "\n";
     llvm::outs() << "Running on function: " << rootOpName << "\n";
     llvm::outs() << "-----------------------------------------\n";
-#if 1
+
     // Perform equality saturation on all operations of a block.
     for (mlir::Block& block: rootOp.getRegion().getBlocks()) {
         std::string parentOpName = block.getParentOp()->getName().getStringRef().str();
         std::string blockName = rootOpName.str() + "_" + parentOpName;
         runOnBlock(block, blockName);
 
-        // Temporary dead code elimination (until this PR is merged: https://github.com/llvm/llvm-project/pull/99671)
+        llvm::outs() << "After running on block: " << blockName << "\n";
+
+        llvm::outs() << "Block arguments: ";
+        llvm::SmallVector<mlir::Type> argTypes;
+        for (mlir::BlockArgument arg : block.getArguments()) {
+            arg.getType().print(llvm::outs());
+            llvm::outs() << "\n";
+        }
+        llvm::outs() << "\n";
+
+        // Temporary dead code elimination
         bool clean = false;
         while (!clean) {
             clean = true;
@@ -496,30 +573,172 @@ void EqualitySaturationPass::runOnOperation() {
             });
         }
     }
-#else
-    // Run equality saturation on the entire function
-    runOnFunction(rootOp);
 
-    // Temporary dead code elimination 
-    bool clean = false;
-    while (!clean) {
-        clean = true;
-        rootOp.walk([&](mlir::Operation* op) {
-            if (mlir::isOpTriviallyDead(op)) {
-                clean = false;
-                op->erase();
-            }
-        });
-    }
-#endif
     llvm::outs() << "-----------------------------------------\n";
     llvm::outs() << "Done running on function: " << rootOpName << "\n";
     llvm::outs() << "mlirToEgglogTime = " << mlirToEgglogTime << "s\n";
     llvm::outs() << "egglogExecTime = " << egglogExecTime << "s\n";
     llvm::outs() << "egglogToMlirTime = " << egglogToMlirTime << "s\n";
     llvm::outs() << "-----------------------------------------\n";
+
+    parentOp->dump();
+}
+#endif
+
+void EqualitySaturationPass::runOnOperation() {
+    init();
+
+    P4::P4MLIR::P4HIR::ControlOp rootOp = getOperation();
+    auto parentOp = rootOp->getParentOp();
+    
+    // Check if we have a parent to work with
+    if (!parentOp) {
+        llvm::errs() << "Error: ControlOp has no parent operation, cannot rewrite root\n";
+        signalPassFailure();
+        return;
+    }
+    
+    llvm::StringRef rootOpName = rootOp.getName();
+
+    llvm::outs() << "Parent operation: " << parentOp->getName().getStringRef() << "\n";
+    llvm::outs() << "Running on function: " << rootOpName << "\n";
+    llvm::outs() << "-----------------------------------------\n";
+
+    // Create a duplicate of the original ControlOp to work on
+    mlir::IRRewriter rewriter(rootOp->getContext());
+    rewriter.setInsertionPoint(rootOp);
+    
+    // Clone the entire ControlOp operation
+    mlir::IRMapping mapping;
+    auto duplicatedControlOp = mlir::cast<P4::P4MLIR::P4HIR::ControlOp>(
+        rewriter.clone(*rootOp.getOperation(), mapping)
+    );
+
+    llvm::outs() << "Created duplicate ControlOp for processing\n";
+
+    // Perform equality saturation on all operations of the duplicated block
+    for (mlir::Block& block: duplicatedControlOp.getRegion().getBlocks()) {
+        std::string parentOpName = block.getParentOp()->getName().getStringRef().str();
+        std::string blockName = rootOpName.str() + "_" + parentOpName;
+        runOnBlock(block, blockName);
+
+        llvm::outs() << "After running on block: " << blockName << "\n";
+
+        llvm::outs() << "Block arguments: ";
+        llvm::SmallVector<mlir::Type> argTypes;
+        for (mlir::BlockArgument arg : block.getArguments()) {
+            arg.getType().print(llvm::outs());
+            llvm::outs() << "\n";
+        }
+        llvm::outs() << "\n";
+
+        // Temporary dead code elimination
+        bool clean = false;
+        while (!clean) {
+            clean = true;
+            
+            block.walk([&](mlir::Operation* op) {
+                if (mlir::isOpTriviallyDead(op)) {
+                    clean = false;
+                    op->erase();
+                }
+            });
+        }
+    }
+
+    llvm::outs() << "-----------------------------------------\n";
+    llvm::outs() << "Done running on function: " << rootOpName << "\n";
+    llvm::outs() << "mlirToEgglogTime = " << mlirToEgglogTime << "s\n";
+    llvm::outs() << "egglogExecTime = " << egglogExecTime << "s\n";
+    llvm::outs() << "egglogToMlirTime = " << egglogToMlirTime << "s\n";
+    llvm::outs() << "-----------------------------------------\n";
+
+    // Now create the bf3drmt ControlOp from the optimized duplicate
+    mlir::Location loc = rootOp.getLoc();
+
+    // Get the attributes from the original control op
+    llvm::StringRef symName = rootOp.getName();
+
+    // Get arg_attrs if it exists
+    llvm::ArrayRef<mlir::DictionaryAttr> argAttrs;
+    llvm::SmallVector<mlir::DictionaryAttr> argAttrsStorage;
+    if (auto argAttrsAttr = rootOp->getAttrOfType<mlir::ArrayAttr>("arg_attrs")) {
+        for (auto attr : argAttrsAttr) {
+            if (auto dictAttr = attr.dyn_cast<mlir::DictionaryAttr>()) {
+                argAttrsStorage.push_back(dictAttr);
+            }
+        }
+        argAttrs = argAttrsStorage;
+    }
+
+    // Get annotations if they exist
+    mlir::DictionaryAttr annotations;
+    if (auto annotationsAttr = rootOp->getAttrOfType<mlir::DictionaryAttr>("annotations")) {
+        annotations = annotationsAttr;
+    }
+
+    // Create the new bf3drmt.control operation
+    auto newControlOp = rewriter.create<mlir::edamlir::bf3drmt::ControlOp>(
+        loc,
+        symName,
+        argAttrs,
+        annotations
+    );
+
+    // Move the optimized region from the duplicate to the new bf3drmt ControlOp
+    newControlOp.getBody().takeBody(duplicatedControlOp.getRegion());
+
+    // Copy any other attributes from the original ControlOp
+    if (auto symVisibility = rootOp->getAttr("sym_visibility")) {
+        newControlOp->setAttr("sym_visibility", symVisibility);
+    }
+
+    llvm::outs() << "\nNew bf3drmt ControlOp created:\n";
+    newControlOp->dump();
+
+    // Clean up the duplicate (it's now empty after takeBody)
+    duplicatedControlOp->erase();
+
+    // Replace the original operation with the new one
+    rewriter.replaceOp(rootOp, llvm::ArrayRef<mlir::Value>{});
+
+    llvm::outs() << "\nParent operation after transformation:\n";
+    parentOp->dump();
 }
 
 std::unique_ptr<mlir::Pass> createEqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs) {
     return std::make_unique<EqualitySaturationPass>(mlirFile, eggFile, funcs);
 }
+#else
+
+// Specific factory functions for convenience
+std::unique_ptr<mlir::Pass> createFuncEqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs) {
+    return std::make_unique<FuncEqualitySaturationPass>(mlirFile, eggFile, funcs);
+}
+
+std::unique_ptr<mlir::Pass> createLLVMFuncEqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs) {
+    return std::make_unique<LLVMFuncEqualitySaturationPass>(mlirFile, eggFile, funcs);
+}
+
+std::unique_ptr<mlir::Pass> createP4HIRFuncEqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs) {
+    return std::make_unique<P4HIRFuncEqualitySaturationPass>(mlirFile, eggFile, funcs);
+}
+
+std::unique_ptr<mlir::Pass> createP4HIRTableKeyEqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs) {
+    return std::make_unique<P4HIRTableKeyEqualitySaturationPass>(mlirFile, eggFile, funcs);
+}
+
+std::unique_ptr<mlir::Pass> createP4HIRControlEqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs) {
+    return std::make_unique<P4HIRControlEqualitySaturationPass>(mlirFile, eggFile, funcs);
+}
+
+std::unique_ptr<mlir::Pass> createModuleEqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs) {
+    return std::make_unique<ModuleEqualitySaturationPass>(mlirFile, eggFile, funcs);
+}
+
+// For backward compatibility, keep the original function name for P4HIR::ControlOp
+std::unique_ptr<mlir::Pass> createOrigEqualitySaturationPass(const std::string& mlirFile, const std::string& eggFile, const EgglogCustomDefs& funcs) {
+    return createP4HIRControlEqualitySaturationPass(mlirFile, eggFile, funcs);
+}
+
+#endif

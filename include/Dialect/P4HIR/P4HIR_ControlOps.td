@@ -3,6 +3,7 @@
 
 def ControlOp : P4HIR_Op<"control",
     [Symbol, SymbolTable, IsolatedFromAbove,
+     NoTerminator, // just for dialegg
      FunctionOpInterface, AutomaticAllocationScope]> {
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FuncType>:$applyType,

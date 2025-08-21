@@ -11,19 +11,22 @@
 
 // struct EggifyPass : public mlir::PassWrapper<EggifyPass, mlir::OperationPass<mlir::func::FuncOp>> {
 // struct EggifyPass : public mlir::PassWrapper<EggifyPass, mlir::OperationPass<mlir::LLVM::LLVMFuncOp>> {
-struct EggifyPass : public mlir::PassWrapper<EggifyPass, mlir::OperationPass<P4::P4MLIR::P4HIR::FuncOp>> {
-// struct EggifyPass : public mlir::PassWrapper<EggifyPass, mlir::OperationPass<P4::P4MLIR::P4HIR::ControlOp>> {
+// struct EggifyPass : public mlir::PassWrapper<EggifyPass, mlir::OperationPass<P4::P4MLIR::P4HIR::FuncOp>> {
+struct EggifyPass : public mlir::PassWrapper<EggifyPass, mlir::OperationPass<P4::P4MLIR::P4HIR::ControlOp>> {
+// struct EggifyPass : public mlir::PassWrapper<EggifyPass, mlir::OperationPass<P4::P4MLIR::P4HIR::TableKeyOp>> {
     mlir::StringRef getArgument() const override { return "eggify"; }
     mlir::StringRef getDescription() const override { return "Converts MLIR operations to Egglog Op variants."; }
 
     void runOnOperation() override {
         // mlir::func::FuncOp rootOp = getOperation();
         // mlir::LLVM::LLVMFuncOp rootOp = getOperation();
-        P4::P4MLIR::P4HIR::FuncOp rootOp = getOperation();
-        // P4::P4MLIR::P4HIR::ControlOp rootOp = getOperation();
+        // P4::P4MLIR::P4HIR::FuncOp rootOp = getOperation();
+        P4::P4MLIR::P4HIR::ControlOp rootOp = getOperation();
+        // P4::P4MLIR::P4HIR::TableKeyOp rootOp = getOperation();
 
         // Get the name of the function
         llvm::StringRef rootOpName = rootOp.getName();
+        // llvm::StringRef rootOpName = "test";
 
         llvm::outs() << "--------------------------------\n";
         llvm::outs() << "Function: " << rootOpName << "\n";

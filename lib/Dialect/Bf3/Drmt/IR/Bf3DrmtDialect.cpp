@@ -4,9 +4,9 @@
 #include <iostream>
 
 #include "Dialect/Bf3/Drmt/IR/Bf3DrmtDialect.h"
-#include "Dialect/Bf3/Drmt/IR/Bf3DrmtOps.h"
 #include "Dialect/Bf3/Drmt/IR/Bf3DrmtTypes.h"
 #include "Dialect/Bf3/Drmt/IR/Bf3DrmtAttrs.h"
+#include "Dialect/Bf3/Drmt/IR/Bf3DrmtOps.h"
 
 using namespace mlir;
 
@@ -15,11 +15,10 @@ using namespace mlir;
 //===----------------------------------------------------------------------===//
 
 void mlir::edamlir::bf3drmt::Bf3DrmtDialect::initialize() {
-    std::cout << "Initializing BF3 dRMT Dialect..." << std::endl;
-//     addOperations<
-// #define GET_OP_LIST
-// #include "Dialect/Bf3/Drmt/IR/Bf3DrmtOps.cpp.inc"
-//         >();
     registerTypes();
     registerAttributes();
+    addOperations<
+#define GET_OP_LIST
+#include "Dialect/Bf3/Drmt/IR/Bf3DrmtOps.cpp.inc"
+        >();
 }

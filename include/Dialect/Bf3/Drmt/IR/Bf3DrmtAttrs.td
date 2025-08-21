@@ -61,4 +61,32 @@ def Bf3Drmt_ValidityBitAttr : EnumAttr<Bf3Drmt_Dialect, Bf3Drmt_ValidityBit, "va
     }];
 }
 
+
+//===----------------------------------------------------------------------===//
+// MatchKindAttr
+//===----------------------------------------------------------------------===//
+def Bf3Drmt_MatchKindAttr : Bf3Drmt_Attr<"MatchKind", "match_kind",
+    [
+        // TODO: Do we need this to be typed?
+        // TypedAttrInterface
+    ]> {
+    let summary = "Represent match kind";
+    let description = [{
+        The MatchKindAttr represents a match kind value
+    }];
+
+    let parameters = (ins "mlir::StringAttr":$value);
+
+    let assemblyFormat = [{
+        `<` $value `>`
+    }];
+
+    let builders = [
+        AttrBuilder<(ins "mlir::StringRef":$value), [{
+        return $_get($_ctxt, mlir::StringAttr::get($_ctxt, value));
+        }]>
+    ];
+
+}
+
 #endif  // BF3_BF3DRMT_ATTRS_TD
